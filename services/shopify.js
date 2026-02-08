@@ -5,7 +5,14 @@ import { shopifyApi, ApiVersion } from "@shopify/shopify-api";
 const shopify = shopifyApi({
     apiKey: process.env.SHOPIFY_CLIENT_ID,
     apiSecretKey: process.env.SHOPIFY_CLIENT_SECRET,
-    scopes: ["read_products", "write_products"],
+    scopes: [
+        "read_products",
+        "write_products",
+        "read_files",
+        "write_files",
+        "read_metaobjects",
+        "write_metaobjects"
+    ],
     hostName: process.env.HOST || "localhost:3000",
     hostScheme: (process.env.HOST || "localhost:3000").includes("localhost") ? "http" : "https",
     apiVersion: ApiVersion.January26,
@@ -169,7 +176,15 @@ export { shopify };
  * @returns {Promise<string>} - The Shopify File ID (gid://shopify/File/...)
  */
 export async function uploadFileToShopify(file) {
-    const client = getRestClient();
+    const token = accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+    if (!token) throw new Error("No access token available");
+
+    const client = new shopify.clients.Graphql({
+        session: {
+            shop: process.env.SHOPIFY_STORE_DOMAIN,
+            accessToken: token,
+        },
+    });
 
     // 1. Request Staged Upload URL
     // We use GraphQL for this as it's not available in REST
@@ -200,16 +215,21 @@ export async function uploadFileToShopify(file) {
         httpMethod: "POST",
     };
 
-    const response = await client.post({
-        path: "graphql.json",
-        data: {
-            query: stagedUploadQuery,
-            variables: { input: [input] },
-        },
-        type: "application/json",
+    const response = await client.request(stagedUploadQuery, {
+        variables: { input: [input] },
     });
 
-    const stagedTargets = response.body.data.stagedUploadsCreate.stagedTargets;
+    console.log("🔍 GraphQL Response Keys:", Object.keys(response));
+    if (response.body) console.log("🔍 Response Body Keys:", Object.keys(response.body));
+
+    // Try to access data from response.body or response directly
+    const data = response.body?.data || response.data;
+
+    if (!data) {
+        throw new Error("No data received from Shopify GraphQL");
+    }
+
+    const stagedTargets = data.stagedUploadsCreate?.stagedTargets;
     if (!stagedTargets || stagedTargets.length === 0) {
         throw new Error("Failed to get staged upload target");
     }
@@ -257,18 +277,21 @@ export async function uploadFileToShopify(file) {
         contentType: file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
     };
 
-    const createResponse = await client.post({
-        path: "graphql.json",
-        data: {
-            query: fileCreateQuery,
-            variables: { files: [fileCreateInput] },
-        },
-        type: "application/json",
+    const createResponse = await client.request(fileCreateQuery, {
+        variables: { files: [fileCreateInput] },
     });
 
-    const files = createResponse.body.data.fileCreate.files;
+    console.log("🔍 File Create Response Keys:", Object.keys(createResponse));
+
+    const createData = createResponse.body?.data || createResponse.data;
+
+    if (!createData) {
+        throw new Error("No data received from fileCreate");
+    }
+
+    const files = createData.fileCreate?.files;
     if (!files || files.length === 0) {
-        const errors = createResponse.body.data.fileCreate.userErrors;
+        const errors = createData.fileCreate?.userErrors;
         throw new Error(`Failed to create file resource: ${JSON.stringify(errors)}`);
     }
 

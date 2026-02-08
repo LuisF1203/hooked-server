@@ -20,21 +20,37 @@ const upload = multer({ storage: multer.memoryStorage() });
 /**
  * Upload a file to Shopify
  * POST /shopify/upload
- * Content-Type: multipart/form-data
- * field: file
+ * Content-Type: multipart/form-data (field: file)
+ * OR
+ * Content-Type: application/json (body: { filename, mimetype, base64 })
  */
 router.post("/upload", upload.single("file"), async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: "No file uploaded" });
+        let fileData;
+
+        // Check if file is uploaded via multipart/form-data
+        if (req.file) {
+            fileData = {
+                name: req.file.originalname,
+                type: req.file.mimetype,
+                size: req.file.size,
+                buffer: req.file.buffer,
+            };
+        }
+        // Check if file is provided as base64 in body (JSON)
+        else if (req.body.base64 && req.body.filename && req.body.mimetype) {
+            const buffer = Buffer.from(req.body.base64, "base64");
+            fileData = {
+                name: req.body.filename,
+                type: req.body.mimetype,
+                size: buffer.length,
+                buffer: buffer,
+            };
+        } else {
+            return res.status(400).json({ error: "No file uploaded. Provide 'file' (multipart) or 'base64', 'filename', and 'mimetype' (JSON)." });
         }
 
-        const fileId = await uploadFileToShopify({
-            name: req.file.originalname,
-            type: req.file.mimetype,
-            size: req.file.size,
-            buffer: req.file.buffer,
-        });
+        const fileId = await uploadFileToShopify(fileData);
 
         res.json({
             success: true,
