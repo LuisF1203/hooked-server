@@ -85,7 +85,7 @@ export async function getProductMetafields(productId) {
  * @param {string} metafield.type - Metafield type (e.g., "single_line_text_field", "json", "number_integer")
  */
 export async function setProductMetafield(productId, metafield) {
-    const client = getRestClient();
+    console.log("📤 Setting Metafield:", JSON.stringify(metafield, null, 2));
 
     const response = await client.post({
         path: `products/${productId}/metafields`,
@@ -98,6 +98,8 @@ export async function setProductMetafield(productId, metafield) {
             },
         },
     });
+
+    console.log("📥 Shopify Response Body:", JSON.stringify(response.body, null, 2));
 
     return response.body.metafield;
 }
