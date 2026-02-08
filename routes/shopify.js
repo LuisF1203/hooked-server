@@ -63,6 +63,93 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     }
 });
 
+/**
+ * Upload a file to Shopify AND assign it to a product metafield
+ * POST /shopify/upload-and-assign
+ * Content-Type: multipart/form-data (field: file, field: productId)
+ */
+router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
+    try {
+        const { productId } = req.body;
+
+        if (!productId) {
+            return res.status(400).json({ error: "No productId provided." });
+        }
+
+        let fileData;
+
+        // Check if file is uploaded via multipart/form-data
+        if (req.file) {
+            fileData = {
+                name: req.file.originalname,
+                type: req.file.mimetype,
+                size: req.file.size,
+                buffer: req.file.buffer,
+            };
+        } else {
+            return res.status(400).json({ error: "No file uploaded." });
+        }
+
+        // 1. Upload file to Shopify
+        const fileId = await uploadFileToShopify(fileData);
+        console.log(`✅ File uploaded: ${fileId}`);
+
+        // 2. Get existing metafields to find current list
+        // We need to find the specific metafield ID for 'custom.user_media_pending'
+        const metafields = await getProductMetafields(productId);
+        const targetMetafield = metafields.find(
+            (m) => m.namespace === "custom" && m.key === "user_media_pending"
+        );
+
+        let currentFiles = [];
+        if (targetMetafield && targetMetafield.value) {
+            try {
+                currentFiles = JSON.parse(targetMetafield.value);
+                if (!Array.isArray(currentFiles)) {
+                    currentFiles = []; // Should be a list
+                }
+            } catch (e) {
+                console.warn("Could not parse existing metafield value:", e);
+                currentFiles = [];
+            }
+        }
+
+        // 3. Append new file ID
+        currentFiles.push(fileId);
+
+        // 4. Update the metafield
+        // Note: list.file_reference expects a JSON array of strings (GIDs)
+        const updatedValue = JSON.stringify(currentFiles);
+        const metafieldData = {
+            namespace: "custom",
+            key: "user_media_pending",
+            value: updatedValue,
+            type: "list.file_reference",
+        };
+
+        let resultMetafield;
+        if (targetMetafield) {
+            // Update existing using ID (safer/faster) or just setProductMetafield again
+            // setProductMetafield handles create/update if we use product ID context
+            resultMetafield = await setProductMetafield(productId, metafieldData);
+        } else {
+            // Create new
+            resultMetafield = await setProductMetafield(productId, metafieldData);
+        }
+
+        res.json({
+            success: true,
+            fileId,
+            metafield: resultMetafield,
+            message: "File uploaded and assigned to product."
+        });
+
+    } catch (error) {
+        console.error("Error in upload-and-assign:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ============================================
 // OAuth Routes
 // ============================================
