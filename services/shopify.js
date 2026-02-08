@@ -312,6 +312,10 @@ export async function uploadFileToShopify(file) {
     const fileId = files[0].id;
     console.log(`✅ File uploaded successfully: ${fileId}`);
 
-    // Check status loop could be added here, but usually we just return the ID
-    return fileId;
+    // Return both ID and URL for metafield storage
+    return {
+        fileId,
+        url: target.resourceUrl,  // This is the CDN URL
+        type: file.type
+    };
 }

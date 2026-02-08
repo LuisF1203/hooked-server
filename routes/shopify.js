@@ -50,11 +50,12 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             return res.status(400).json({ error: "No file uploaded. Provide 'file' (multipart) or 'base64', 'filename', and 'mimetype' (JSON)." });
         }
 
-        const fileId = await uploadFileToShopify(fileData);
+        const uploadResult = await uploadFileToShopify(fileData);
 
         res.json({
             success: true,
-            fileId,
+            fileId: uploadResult.fileId,
+            url: uploadResult.url,
             message: "File uploaded to Shopify. You can now use this fileId in metafields."
         });
     } catch (error) {
@@ -91,11 +92,10 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
         }
 
         // 1. Upload file to Shopify
-        const fileId = await uploadFileToShopify(fileData);
-        console.log(`✅ File uploaded: ${fileId}`);
+        const uploadResult = await uploadFileToShopify(fileData);
+        console.log(`✅ File uploaded: ${uploadResult.fileId}`);
 
         // 2. Get existing metafields to find current list
-        // We need to find the specific metafield ID for 'custom.user_media_pending'
         const metafields = await getProductMetafields(productId);
         const targetMetafield = metafields.find(
             (m) => m.namespace === "custom" && m.key === "user_media_pending"
@@ -106,7 +106,7 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
             try {
                 currentFiles = JSON.parse(targetMetafield.value);
                 if (!Array.isArray(currentFiles)) {
-                    currentFiles = []; // Should be a list
+                    currentFiles = [];
                 }
             } catch (e) {
                 console.warn("Could not parse existing metafield value:", e);
@@ -114,32 +114,29 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
             }
         }
 
-        // 3. Append new file ID
-        currentFiles.push(fileId);
+        // 3. Append new file URL (not GID)
+        currentFiles.push(uploadResult.url);
 
-        // 4. Update the metafield
-        // Note: list.file_reference expects a JSON array of strings (GIDs)
+        // 4. Update the metafield as JSON (not list.file_reference)
         const updatedValue = JSON.stringify(currentFiles);
         const metafieldData = {
             namespace: "custom",
             key: "user_media_pending",
             value: updatedValue,
-            type: "list.file_reference",
+            type: "json",  // Changed from list.file_reference
         };
 
         let resultMetafield;
         if (targetMetafield) {
-            // Update existing using ID (safer/faster) or just setProductMetafield again
-            // setProductMetafield handles create/update if we use product ID context
             resultMetafield = await setProductMetafield(productId, metafieldData);
         } else {
-            // Create new
             resultMetafield = await setProductMetafield(productId, metafieldData);
         }
 
         res.json({
             success: true,
-            fileId,
+            fileId: uploadResult.fileId,
+            url: uploadResult.url,
             metafield: resultMetafield,
             message: "File uploaded and assigned to product."
         });
