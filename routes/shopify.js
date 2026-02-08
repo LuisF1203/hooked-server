@@ -98,7 +98,7 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
         // 2. Get existing metafields to find current list
         const metafields = await getProductMetafields(productId);
         const targetMetafield = metafields.find(
-            (m) => m.namespace === "custom" && m.key === "user_media_pending"
+            (m) => m.namespace === "custom" && m.key === "user_media_urls"
         );
 
         let currentFiles = [];
@@ -121,7 +121,7 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
         const updatedValue = JSON.stringify(currentFiles);
         const metafieldData = {
             namespace: "custom",
-            key: "user_media_pending",
+            key: "user_media_urls",
             value: updatedValue,
             type: "json",  // Changed from list.file_reference
         };
