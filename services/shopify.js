@@ -207,8 +207,14 @@ export async function uploadFileToShopify(file) {
         }
     `;
 
+    // Shopify Video only supports MP4 and MOV. WebM must be uploaded as generic FILE.
+    const isSupportedVideo = file.type === "video/mp4" || file.type === "video/quicktime";
+    const resourceType = file.type.startsWith("video/")
+        ? (isSupportedVideo ? "VIDEO" : "FILE")
+        : "IMAGE";
+
     const input = {
-        resource: "FILE",
+        resource: resourceType,
         filename: file.name,
         mimeType: file.type,
         fileSize: String(file.size),
@@ -274,7 +280,7 @@ export async function uploadFileToShopify(file) {
 
     const fileCreateInput = {
         originalSource: target.resourceUrl,
-        contentType: file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
+        contentType: resourceType === "FILE" ? "FILE" : resourceType,
     };
 
     const createResponse = await client.request(fileCreateQuery, {
