@@ -21,7 +21,7 @@ app.use("/shopify", shopifyRoutes);
 
 app.listen(3000, () => {
     console.log("Server started on port 3000");
-    console.log("Para conectar Shopify visita: http://localhost:3000/shopify/auth");
+    console.log("✅ Servidor listo. Asegúrate de tener SHOPIFY_ACCESS_TOKEN en .env");
 });
 
 app.get("/", (req, res) => {

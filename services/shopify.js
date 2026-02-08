@@ -6,7 +6,7 @@ const shopify = shopifyApi({
     apiKey: process.env.SHOPIFY_CLIENT_ID,
     apiSecretKey: process.env.SHOPIFY_CLIENT_SECRET,
     scopes: ["read_products", "write_products"],
-    hostName: process.env.SHOPIFY_STORE_DOMAIN,
+    hostName: "localhost:3000",
     apiVersion: ApiVersion.January26,
     isEmbeddedApp: false,
 });
@@ -32,14 +32,16 @@ export function setAccessToken(token) {
  * Create REST client for Shopify API calls
  */
 function getRestClient() {
-    if (!accessToken) {
+    const token = accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+
+    if (!token) {
         throw new Error("No access token available. Please complete OAuth first.");
     }
 
     return new shopify.clients.Rest({
         session: {
             shop: process.env.SHOPIFY_STORE_DOMAIN,
-            accessToken: accessToken,
+            accessToken: token,
         },
     });
 }

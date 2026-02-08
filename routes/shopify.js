@@ -24,15 +24,13 @@ const router = Router();
 router.get("/auth", async (req, res) => {
     const shop = process.env.SHOPIFY_STORE_DOMAIN;
 
-    const authUrl = await shopify.auth.begin({
+    await shopify.auth.begin({
         shop,
         callbackPath: "/shopify/callback",
         isOnline: false,
         rawRequest: req,
         rawResponse: res,
     });
-
-    res.redirect(authUrl);
 });
 
 /**
