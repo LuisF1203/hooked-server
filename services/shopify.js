@@ -87,6 +87,8 @@ export async function getProductMetafields(productId) {
 export async function setProductMetafield(productId, metafield) {
     console.log("📤 Setting Metafield:", JSON.stringify(metafield, null, 2));
 
+    const client = getRestClient();
+
     const response = await client.post({
         path: `products/${productId}/metafields`,
         data: {
