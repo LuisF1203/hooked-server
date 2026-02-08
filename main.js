@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import shopifyRoutes from "./routes/shopify.js";
 
 const app = express();
 
@@ -14,8 +15,12 @@ app.use(cors({
 }));
 app.options(/.*/, cors());
 
+// Shopify API routes
+app.use("/shopify", shopifyRoutes);
+
 app.listen(3000, () => {
     console.log("Server started on port 3000");
+    console.log("Para conectar Shopify visita: http://localhost:3000/shopify/auth");
 });
 
 app.get("/", (req, res) => {
