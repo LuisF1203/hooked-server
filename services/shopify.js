@@ -162,3 +162,119 @@ export async function setProductMetafields(productId, metafields) {
 
 // Export shopify instance for OAuth
 export { shopify };
+
+/**
+ * Upload a file to Shopify (Image or Video)
+ * @param {Object} file - File object { name, size, type, buffer } or { url }
+ * @returns {Promise<string>} - The Shopify File ID (gid://shopify/File/...)
+ */
+export async function uploadFileToShopify(file) {
+    const client = getRestClient();
+
+    // 1. Request Staged Upload URL
+    // We use GraphQL for this as it's not available in REST
+    const stagedUploadQuery = `
+        mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+            stagedUploadsCreate(input: $input) {
+                stagedTargets {
+                    url
+                    resourceUrl
+                    parameters {
+                        name
+                        value
+                    }
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    const input = {
+        resource: "FILE",
+        filename: file.name,
+        mimeType: file.type,
+        fileSize: String(file.size),
+        httpMethod: "POST",
+    };
+
+    const response = await client.post({
+        path: "graphql.json",
+        data: {
+            query: stagedUploadQuery,
+            variables: { input: [input] },
+        },
+        type: "application/json",
+    });
+
+    const stagedTargets = response.body.data.stagedUploadsCreate.stagedTargets;
+    if (!stagedTargets || stagedTargets.length === 0) {
+        throw new Error("Failed to get staged upload target");
+    }
+
+    const target = stagedTargets[0];
+    const formData = new FormData();
+
+    // Add parameters required by Shopify
+    target.parameters.forEach((param) => {
+        formData.append(param.name, param.value);
+    });
+
+    // Add the file itself
+    const blob = new Blob([file.buffer], { type: file.type });
+    formData.append("file", blob);
+
+    // 2. Upload to the Staged URL
+    const uploadResponse = await fetch(target.url, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload file to staged URL: ${uploadResponse.statusText}`);
+    }
+
+    // 3. Create the File resource in Shopify
+    const fileCreateQuery = `
+        mutation fileCreate($files: [FileCreateInput!]!) {
+            fileCreate(files: $files) {
+                files {
+                    id
+                    fileStatus
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    const fileCreateInput = {
+        originalSource: target.resourceUrl,
+        contentType: file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
+    };
+
+    const createResponse = await client.post({
+        path: "graphql.json",
+        data: {
+            query: fileCreateQuery,
+            variables: { files: [fileCreateInput] },
+        },
+        type: "application/json",
+    });
+
+    const files = createResponse.body.data.fileCreate.files;
+    if (!files || files.length === 0) {
+        const errors = createResponse.body.data.fileCreate.userErrors;
+        throw new Error(`Failed to create file resource: ${JSON.stringify(errors)}`);
+    }
+
+    const fileId = files[0].id;
+    console.log(`✅ File uploaded successfully: ${fileId}`);
+
+    // Check status loop could be added here, but usually we just return the ID
+    return fileId;
+}

@@ -12,6 +12,40 @@ import {
 } from "../services/shopify.js";
 
 const router = Router();
+import multer from "multer";
+import { uploadFileToShopify } from "../services/shopify.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+/**
+ * Upload a file to Shopify
+ * POST /shopify/upload
+ * Content-Type: multipart/form-data
+ * field: file
+ */
+router.post("/upload", upload.single("file"), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        const fileId = await uploadFileToShopify({
+            name: req.file.originalname,
+            type: req.file.mimetype,
+            size: req.file.size,
+            buffer: req.file.buffer,
+        });
+
+        res.json({
+            success: true,
+            fileId,
+            message: "File uploaded to Shopify. You can now use this fileId in metafields."
+        });
+    } catch (error) {
+        console.error("Error uploading file:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // ============================================
 // OAuth Routes
