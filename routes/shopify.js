@@ -24,6 +24,12 @@ const router = Router();
 router.get("/auth", async (req, res) => {
     const shop = process.env.SHOPIFY_STORE_DOMAIN;
 
+    console.log("🔍 OAuth Debug Info:");
+    console.log("Shop:", shop);
+    console.log("Host Name:", shopify.config.hostName);
+    console.log("Host Scheme:", shopify.config.hostScheme);
+    console.log("Expected Callback URL:", `${shopify.config.hostScheme}://${shopify.config.hostName}/shopify/callback`);
+
     await shopify.auth.begin({
         shop,
         callbackPath: "/shopify/callback",
