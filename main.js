@@ -44,13 +44,26 @@ app.get("/order/:id", async (req, res) => {
             return res.status(404).json({ error: "Order not found" });
         }
 
-        // Fetch user_media_urls metafield for each product
-        const { getProductMetafields } = await import("./services/shopify.js");
+        // Fetch user_media_urls metafield AND product images for each product
+        const { getProductMetafields, getProduct } = await import("./services/shopify.js");
 
         for (const item of order.items) {
-            if (item.productId) {
+            if (item.shopifyProductId) {
                 try {
-                    const metafields = await getProductMetafields(item.productId);
+                    // Fetch product details from Shopify to get the image
+                    const product = await getProduct(item.shopifyProductId);
+
+                    // Add the featured image to the item
+                    if (product && product.image) {
+                        item.image = product.image.src;
+                    } else if (product && product.images && product.images.length > 0) {
+                        item.image = product.images[0].src;
+                    } else {
+                        item.image = null;
+                    }
+
+                    // Fetch user_media_urls metafield
+                    const metafields = await getProductMetafields(item.shopifyProductId);
                     const urlsMetafield = metafields.find(
                         m => m.namespace === "custom" && m.key === "user_media_urls"
                     );
@@ -61,7 +74,8 @@ app.get("/order/:id", async (req, res) => {
                         item.user_media_urls = [];
                     }
                 } catch (e) {
-                    console.warn(`Could not fetch metafield for product ${item.productId}:`, e);
+                    console.warn(`Could not fetch data for product ${item.shopifyProductId}:`, e);
+                    item.image = null;
                     item.user_media_urls = [];
                 }
             }
