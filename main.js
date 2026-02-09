@@ -44,6 +44,29 @@ app.get("/order/:id", async (req, res) => {
             return res.status(404).json({ error: "Order not found" });
         }
 
+        // Fetch user_media_urls metafield for each product
+        const { getProductMetafields } = await import("./services/shopify.js");
+
+        for (const item of order.items) {
+            if (item.productId) {
+                try {
+                    const metafields = await getProductMetafields(item.productId);
+                    const urlsMetafield = metafields.find(
+                        m => m.namespace === "custom" && m.key === "user_media_urls"
+                    );
+
+                    if (urlsMetafield && urlsMetafield.value) {
+                        item.user_media_urls = JSON.parse(urlsMetafield.value);
+                    } else {
+                        item.user_media_urls = [];
+                    }
+                } catch (e) {
+                    console.warn(`Could not fetch metafield for product ${item.productId}:`, e);
+                    item.user_media_urls = [];
+                }
+            }
+        }
+
         res.json(order);
     } catch (error) {
         console.error("Error fetching order:", error);
