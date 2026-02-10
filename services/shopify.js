@@ -11,7 +11,9 @@ const shopify = shopifyApi({
         "read_files",
         "write_files",
         "read_metaobjects",
-        "write_metaobjects"
+        "write_metaobjects",
+        "read_orders",
+        "read_customers"
     ],
     hostName: process.env.HOST || "localhost:3000",
     hostScheme: (process.env.HOST || "localhost:3000").includes("localhost") ? "http" : "https",
@@ -318,4 +320,117 @@ export async function uploadFileToShopify(file) {
         url: target.resourceUrl,  // This is the CDN URL
         type: file.type
     };
+}
+
+/**
+ * Verify if a customer has purchased a specific product
+ * @param {string} customerId - Shopify Customer ID (numeric or GID)
+ * @param {string} productId - Shopify Product ID (numeric or GID)
+ * @returns {Promise<{verified: boolean, orderId?: string}>}
+ */
+export async function verifyCustomerOwnsProduct(customerId, productId) {
+    const token = accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+    if (!token) throw new Error("No access token available");
+
+    const client = new shopify.clients.Graphql({
+        session: {
+            shop: process.env.SHOPIFY_STORE_DOMAIN,
+            accessToken: token,
+        },
+    });
+
+    // Ensure IDs are in GID format
+    const customerGid = customerId.toString().startsWith("gid://")
+        ? customerId
+        : `gid://shopify/Customer/${customerId}`;
+
+    const productGid = productId.toString().startsWith("gid://")
+        ? productId
+        : `gid://shopify/Product/${productId}`;
+
+    console.log(`🔍 Verifying ownership: Customer ${customerGid} -> Product ${productGid}`);
+
+    const query = `
+        query customerOrders($id: ID!) {
+            customer(id: $id) {
+                orders(first: 50, reverse: true) {
+                    edges {
+                        node {
+                            id
+                            lineItems(first: 50) {
+                                edges {
+                                    node {
+                                        product {
+                                            id
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    `;
+
+    try {
+        const response = await client.request(query, {
+            variables: { id: customerGid },
+        });
+
+        const data = response.body?.data || response.data;
+
+        if (!data?.customer) {
+            console.log("❌ Customer not found");
+            return { verified: false };
+        }
+
+        const orders = data.customer.orders.edges;
+
+        for (const order of orders) {
+            const lineItems = order.node.lineItems.edges;
+            const hasProduct = lineItems.some(item => item.node.product?.id === productGid);
+
+            if (hasProduct) {
+                console.log(`✅ Verification successful! Found in order ${order.node.id}`);
+                return { verified: true, orderId: order.node.id };
+            }
+        }
+
+        console.log("❌ Product not found in customer's recent orders");
+        return { verified: false };
+
+    } catch (error) {
+        console.error("Error verifying ownership:", error);
+        return { verified: false, error: error.message };
+    }
+}
+
+/**
+ * Verify if an order contains a specific product
+ * @param {string} orderId - Shopify Order ID
+ * @param {string} productId - Shopify Product ID
+ */
+export async function verifyOrderContainsProduct(orderId, productId) {
+    const client = getRestClient();
+
+    try {
+        const response = await client.get({
+            path: `orders/${orderId}`,
+        });
+
+        const order = response.body.order;
+        if (!order) return false;
+
+        // Check if product exists in line items
+        // Note: product_id is a number in REST
+        const hasProduct = order.line_items.some(item => String(item.product_id) === String(productId));
+
+        console.log(`🔍 Order Verification: Order ${orderId} contains Product ${productId}? ${hasProduct}`);
+        return hasProduct;
+
+    } catch (error) {
+        console.error("Error verifying order content:", error);
+        return false;
+    }
 }

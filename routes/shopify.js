@@ -9,18 +9,39 @@ import {
     updateMetafield,
     deleteMetafield,
     getProduct,
+    verifyCustomerOwnsProduct,
+    verifyOrderContainsProduct,
+    uploadFileToShopify,
 } from "../services/shopify.js";
 
 const router = Router();
 import multer from "multer";
-import { uploadFileToShopify } from "../services/shopify.js";
+import crypto from "crypto";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 /**
+ * Verify HMAC signature from Liquid
+ */
+function verifyShopifySignature(customerId, signature) {
+    // If no secret is set, we can't verify. 
+    // WARN: In production, this should be enforced.
+    if (!process.env.SHOPIFY_CUSTOMER_SECRET) {
+        console.warn("⚠️ SHOPIFY_CUSTOMER_SECRET not set. Skipping signature verification.");
+        return true;
+    }
+
+    const hash = crypto.createHmac('sha256', process.env.SHOPIFY_CUSTOMER_SECRET)
+        .update(customerId.toString())
+        .digest('hex');
+
+    return hash === signature;
+}
+
+/**
  * Upload a file to Shopify
  * POST /shopify/upload
- * Content-Type: multipart/form-data (field: file)
+ * Content-Type: multipart/form-form (field: file)
  * OR
  * Content-Type: application/json (body: { filename, mimetype, base64 })
  */
@@ -71,10 +92,46 @@ router.post("/upload", upload.single("file"), async (req, res) => {
  */
 router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
     try {
-        const { productId } = req.body;
+        const { productId, customerId, signature, orderId } = req.body;
 
         if (!productId) {
             return res.status(400).json({ error: "No productId provided." });
+        }
+
+        let isAuthorized = false;
+
+        // 1. Verify Authentication & Ownership
+        if (customerId) {
+            // Verify Signature (optional but recommended)
+            if (signature && !verifyShopifySignature(customerId, signature)) {
+                return res.status(401).json({ error: "Invalid signature. Authentication failed." });
+            }
+
+            // Verify Ownership
+            const ownership = await verifyCustomerOwnsProduct(customerId, productId);
+            if (!ownership.verified) {
+                return res.status(403).json({
+                    error: "Ownership verification failed. You must purchase this product to post."
+                });
+            }
+            isAuthorized = true;
+        } else if (orderId) {
+            // Verify Order contains product
+            const hasProduct = await verifyOrderContainsProduct(orderId, productId);
+            if (!hasProduct) {
+                return res.status(403).json({
+                    error: "This order does not contain the specified product."
+                });
+            }
+            isAuthorized = true;
+        } else {
+            // For now, allow consistent with previous behavior BUT warn
+            // Ideally this should be blocked
+            console.warn("⚠️ Uploading without customer/order verification!");
+            // Temporary Allow for dev until frontend is fully updated
+            // isAuthorized = true; 
+            // STRICT MODE:
+            return res.status(401).json({ error: "Authentication required (customerId or orderId)." });
         }
 
         let fileData;
@@ -320,6 +377,81 @@ router.get("/products/:productId", async (req, res) => {
         res.json({ product });
     } catch (error) {
         console.error("Error getting product:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Verify if customer owns a product
+ * GET /shopify/verify-ownership/:productId?customerId=...&signature=...
+ */
+router.get("/verify-ownership/:productId", async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { customerId, signature } = req.query;
+
+        if (!customerId) {
+            return res.status(400).json({ error: "customerId is required" });
+        }
+
+        if (signature && !verifyShopifySignature(customerId, signature)) {
+            return res.status(401).json({ error: "Invalid signature" });
+        }
+
+        const result = await verifyCustomerOwnsProduct(customerId, productId);
+        res.json(result);
+
+    } catch (error) {
+        console.error("Error verifying ownership:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Get product gallery (only for owners)
+ * GET /shopify/products/:productId/gallery?customerId=...&signature=...
+ */
+router.get("/products/:productId/gallery", async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { customerId, signature } = req.query;
+
+        if (!customerId) {
+            return res.status(400).json({ error: "customerId is required" });
+        }
+
+        if (signature && !verifyShopifySignature(customerId, signature)) {
+            return res.status(401).json({ error: "Invalid signature" });
+        }
+
+        // 1. Verify Ownership
+        const ownership = await verifyCustomerOwnsProduct(customerId, productId);
+        if (!ownership.verified) {
+            return res.status(403).json({
+                error: "Access denied. You must purchase this product to view the gallery."
+            });
+        }
+
+        // 2. Fetch Metafields
+        const metafields = await getProductMetafields(productId);
+        const galleryMetafield = metafields.find(m => m.namespace === "custom" && m.key === "user_media_urls");
+
+        let media = [];
+        if (galleryMetafield) {
+            try {
+                media = JSON.parse(galleryMetafield.value);
+            } catch (e) {
+                console.warn("Failed to parse gallery metafield", e);
+            }
+        }
+
+        res.json({
+            authorized: true,
+            media
+        });
+
+    } catch (error) {
+        console.error("Error fetching gallery:", error);
         res.status(500).json({ error: error.message });
     }
 });
