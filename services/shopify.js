@@ -279,6 +279,21 @@ export async function uploadFileToShopify(file) {
                 files {
                     id
                     fileStatus
+                    ... on MediaImage {
+                        image {
+                            url
+                        }
+                    }
+                    ... on Video {
+                        sources {
+                            url
+                            mimeType
+                            format
+                        }
+                    }
+                    ... on GenericFile {
+                        url
+                    }
                 }
                 userErrors {
                     field
@@ -311,13 +326,35 @@ export async function uploadFileToShopify(file) {
         throw new Error(`Failed to create file resource: ${JSON.stringify(errors)}`);
     }
 
-    const fileId = files[0].id;
+    const createdFile = files[0];
+    const fileId = createdFile.id;
     console.log(`✅ File uploaded successfully: ${fileId}`);
+
+    // Determine the public URL
+    let publicUrl = target.resourceUrl; // Fallback to staged URL
+
+    if (createdFile.image?.url) {
+        publicUrl = createdFile.image.url;
+    } else if (createdFile.sources && createdFile.sources.length > 0) {
+        // Find mp4 if possible
+        const mp4Source = createdFile.sources.find(s => s.format === 'mp4' || s.mimeType === 'video/mp4');
+        publicUrl = mp4Source ? mp4Source.url : createdFile.sources[0].url;
+    } else if (createdFile.url) {
+        publicUrl = createdFile.url;
+    } else {
+        console.warn("⚠️ Could not find public URL in created file response. Using staged URL.");
+    }
+
+    if (resourceType === 'VIDEO' && (!createdFile.sources || createdFile.sources.length === 0)) {
+        console.warn("⚠️ Video created but sources not yet available (processing?). URL might not be playable immediately.");
+    }
+
+    console.log(`🔗 Public URL: ${publicUrl}`);
 
     // Return both ID and URL for metafield storage
     return {
         fileId,
-        url: target.resourceUrl,  // This is the CDN URL
+        url: publicUrl,
         type: file.type
     };
 }

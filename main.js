@@ -1,12 +1,16 @@
 import "dotenv/config";
+// Trigger restart for Prisma update
 import express from "express";
 import cors from "cors";
 import shopifyRoutes from "./routes/shopify.js";
+import adminRoutes from "./routes/admin.js";
+import cookieParser from "cookie-parser";
 
 const app = express();
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(cookieParser());
 
 app.use(cors({
     origin: true,
@@ -18,6 +22,8 @@ app.options(/.*/, cors());
 
 // Shopify API routes
 app.use("/shopify", shopifyRoutes);
+// Admin Dashboard
+app.use("/admin", adminRoutes);
 
 app.listen(3000, () => {
     console.log("Server started on port 3000");
@@ -62,17 +68,20 @@ app.get("/order/:id", async (req, res) => {
                         item.image = null;
                     }
 
-                    // Fetch user_media_urls metafield
-                    const metafields = await getProductMetafields(item.shopifyProductId);
-                    const urlsMetafield = metafields.find(
-                        m => m.namespace === "custom" && m.key === "user_media_urls"
-                    );
+                    // Fetch approved community media from DB
+                    const approvedMedia = await prisma.media.findMany({
+                        where: {
+                            shopifyProductId: String(item.shopifyProductId),
+                            approved: true
+                        },
+                        select: { url: true, type: true }
+                    });
 
-                    if (urlsMetafield && urlsMetafield.value) {
-                        item.user_media_urls = JSON.parse(urlsMetafield.value);
-                    } else {
-                        item.user_media_urls = [];
-                    }
+                    item.user_media_urls = approvedMedia.map(m => ({
+                        url: m.url,
+                        type: m.type
+                    }));
+
                 } catch (e) {
                     console.warn(`Could not fetch data for product ${item.shopifyProductId}:`, e);
                     item.image = null;
@@ -89,22 +98,8 @@ app.get("/order/:id", async (req, res) => {
 });
 
 
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
-
-// Debug: Print loaded DATABASE_URL (first 50 chars only for security)
-console.log("DATABASE_URL loaded:", process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 50) + "..." : "UNDEFINED");
-
-if (!process.env.DATABASE_URL) {
-    console.error("CRITICAL ERROR: DATABASE_URL is not defined in .env");
-    process.exit(1);
-}
-
-// Use standard pg Pool instead of Neon serverless
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+// Use centralized db connection
+import prisma from "./db.js";
 
 app.post("/webhook/newPaidOrder", async (req, res) => {
     console.log("Webhook received");

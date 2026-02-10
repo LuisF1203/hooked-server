@@ -90,6 +90,15 @@ router.post("/upload", upload.single("file"), async (req, res) => {
  * POST /shopify/upload-and-assign
  * Content-Type: multipart/form-data (field: file, field: productId)
  */
+// Import dependencies
+import { uploadStream } from "../services/cloudinary.js";
+import prisma from "../db.js";
+
+/**
+ * Upload a file to Cloudinary and assign it to a product (store in DB)
+ * POST /shopify/upload-and-assign
+ * Content-Type: multipart/form-data (field: file, field: productId)
+ */
 router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
     try {
         const { productId, customerId, signature, orderId } = req.body;
@@ -99,6 +108,8 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
         }
 
         let isAuthorized = false;
+        let pOrder = null; // Prisma Order
+        let dbCustomer = null;
 
         // 1. Verify Authentication & Ownership
         if (customerId) {
@@ -107,7 +118,7 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
                 return res.status(401).json({ error: "Invalid signature. Authentication failed." });
             }
 
-            // Verify Ownership
+            // Verify Ownership via Shopify
             const ownership = await verifyCustomerOwnsProduct(customerId, productId);
             if (!ownership.verified) {
                 return res.status(403).json({
@@ -115,6 +126,26 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
                 });
             }
             isAuthorized = true;
+
+            // Try to find the local customer record associated with the verification order
+            if (ownership.orderId) {
+                const order = await prisma.order.findUnique({
+                    where: { shopifyId: String(ownership.orderId) },
+                    include: { customer: true }
+                });
+                if (order) {
+                    pOrder = order;
+                    dbCustomer = order.customer;
+                }
+            }
+
+            // Fallback: Check if customer exists by shopifyId directly
+            if (!dbCustomer) {
+                dbCustomer = await prisma.customer.findUnique({
+                    where: { shopifyId: String(customerId) }
+                });
+            }
+
         } else if (orderId) {
             // Verify Order contains product
             const hasProduct = await verifyOrderContainsProduct(orderId, productId);
@@ -124,78 +155,80 @@ router.post("/upload-and-assign", upload.single("file"), async (req, res) => {
                 });
             }
             isAuthorized = true;
+
+            // Find local order
+            const order = await prisma.order.findUnique({
+                where: { shopifyId: String(orderId) },
+                include: { customer: true }
+            });
+            if (order) {
+                pOrder = order;
+                dbCustomer = order.customer;
+            }
         } else {
-            // For now, allow consistent with previous behavior BUT warn
-            // Ideally this should be blocked
-            console.warn("⚠️ Uploading without customer/order verification!");
-            // Temporary Allow for dev until frontend is fully updated
-            // isAuthorized = true; 
             // STRICT MODE:
             return res.status(401).json({ error: "Authentication required (customerId or orderId)." });
         }
 
-        let fileData;
-
-        // Check if file is uploaded via multipart/form-data
-        if (req.file) {
-            fileData = {
-                name: req.file.originalname,
-                type: req.file.mimetype,
-                size: req.file.size,
-                buffer: req.file.buffer,
-            };
-        } else {
+        if (!req.file) {
             return res.status(400).json({ error: "No file uploaded." });
         }
 
-        // 1. Upload file to Shopify
-        const uploadResult = await uploadFileToShopify(fileData);
-        console.log(`✅ File uploaded: ${uploadResult.fileId}`);
+        // 2. Upload to Cloudinary
+        console.log("📂 Uploading to Cloudinary...");
 
-        // 2. Get existing metafields to find current list
-        const metafields = await getProductMetafields(productId);
-        const targetMetafield = metafields.find(
-            (m) => m.namespace === "custom" && m.key === "user_media_urls"
-        );
+        const { filter } = req.body;
+        console.log(`🎨 Applying filter: ${filter || 'none'}`);
 
-        let currentFiles = [];
-        if (targetMetafield && targetMetafield.value) {
+        const uploadResult = await uploadStream(req.file.buffer, {
+            folder: "hoop_community",
+            resource_type: "auto",
+            filter: filter
+        });
+
+        console.log(`✅ Uploaded to Cloudinary: ${uploadResult.secure_url}`);
+
+        // 3. Find or Create Product placeholder if needed
+        let dbProduct = await prisma.product.findUnique({
+            where: { shopifyId: String(productId) }
+        });
+
+        // We can create a basic product record if missing, but we need a name. 
+        // For now, we'll try to fetch it from Shopify if missing, or just use a placeholder
+        if (!dbProduct) {
             try {
-                currentFiles = JSON.parse(targetMetafield.value);
-                if (!Array.isArray(currentFiles)) {
-                    currentFiles = [];
+                const shopifyProduct = await getProduct(productId);
+                if (shopifyProduct) {
+                    dbProduct = await prisma.product.create({
+                        data: {
+                            shopifyId: String(productId),
+                            name: shopifyProduct.title,
+                            // date matches default now()
+                        }
+                    });
                 }
             } catch (e) {
-                console.warn("Could not parse existing metafield value:", e);
-                currentFiles = [];
+                console.warn("Could not fetch/create product record:", e);
             }
         }
 
-        // 3. Append new file URL (not GID)
-        currentFiles.push(uploadResult.url);
-
-        // 4. Update the metafield as JSON (not list.file_reference)
-        const updatedValue = JSON.stringify(currentFiles);
-        const metafieldData = {
-            namespace: "custom",
-            key: "user_media_urls",
-            value: updatedValue,
-            type: "json",  // Changed from list.file_reference
-        };
-
-        let resultMetafield;
-        if (targetMetafield) {
-            resultMetafield = await setProductMetafield(productId, metafieldData);
-        } else {
-            resultMetafield = await setProductMetafield(productId, metafieldData);
-        }
+        // 4. Create Media Record
+        const media = await prisma.media.create({
+            data: {
+                cloudinaryId: uploadResult.public_id,
+                url: uploadResult.secure_url,
+                type: uploadResult.resource_type === 'video' ? 'VIDEO' : 'IMAGE',
+                shopifyProductId: String(productId),
+                productId: dbProduct ? dbProduct.id : null,
+                customerId: dbCustomer ? dbCustomer.id : null
+            }
+        });
 
         res.json({
             success: true,
-            fileId: uploadResult.fileId,
-            url: uploadResult.url,
-            metafield: resultMetafield,
-            message: "File uploaded and assigned to product."
+            media,
+            url: media.url,
+            message: "File uploaded to Cloudinary and saved to database."
         });
 
     } catch (error) {
@@ -432,18 +465,22 @@ router.get("/products/:productId/gallery", async (req, res) => {
             });
         }
 
-        // 2. Fetch Metafields
-        const metafields = await getProductMetafields(productId);
-        const galleryMetafield = metafields.find(m => m.namespace === "custom" && m.key === "user_media_urls");
+        // 2. Fetch Media from DB (Approved Only)
+        // const metafields = await getProductMetafields(productId);
+        // ... replaced by Prisma query ...
 
-        let media = [];
-        if (galleryMetafield) {
-            try {
-                media = JSON.parse(galleryMetafield.value);
-            } catch (e) {
-                console.warn("Failed to parse gallery metafield", e);
-            }
-        }
+        const mediaRecords = await prisma.media.findMany({
+            where: {
+                shopifyProductId: String(productId),
+                approved: true
+            },
+            select: { url: true, type: true }
+        });
+
+        const media = mediaRecords.map(m => ({
+            url: m.url,
+            type: m.type
+        }));
 
         res.json({
             authorized: true,
@@ -452,6 +489,111 @@ router.get("/products/:productId/gallery", async (req, res) => {
 
     } catch (error) {
         console.error("Error fetching gallery:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post("/media/:id/like", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { customerId } = req.body;
+
+        if (!customerId) return res.status(400).json({ error: "customerId is required" });
+
+        // Check if customer exists (optional, but good for integrity)
+        // const customer = await prisma.customer.findUnique({ where: { shopifyId: String(customerId) } });
+
+        // Find the internal customer ID based on Shopify ID
+        let dbCustomer = await prisma.customer.findUnique({
+            where: { shopifyId: String(customerId) }
+        });
+
+        if (!dbCustomer) {
+            // Create if not exists (lazy creation)
+            // ideally we should have it from order webhook, but for robustness:
+            // We need email/name to create properly, so we might fail or create a shell
+            return res.status(404).json({ error: "Customer not found in DB. Make a purchase first." });
+        }
+
+        const existingLike = await prisma.like.findUnique({
+            where: {
+                customerId_mediaId: {
+                    customerId: dbCustomer.id,
+                    mediaId: id
+                }
+            }
+        });
+
+        let liked = false;
+        if (existingLike) {
+            // Unlike
+            await prisma.like.delete({
+                where: { id: existingLike.id }
+            });
+        } else {
+            // Like
+            await prisma.like.create({
+                data: {
+                    customerId: dbCustomer.id,
+                    mediaId: id
+                }
+            });
+            liked = true;
+        }
+
+        // Get new count
+        const likeCount = await prisma.like.count({ where: { mediaId: id } });
+
+        res.json({ success: true, liked, likeCount });
+
+    } catch (error) {
+        console.error("Like Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.get("/products/:productId/media", async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { customerId } = req.query; // Shopify Customer ID
+
+        let dbCustomerId = null;
+        if (customerId) {
+            const dbCustomer = await prisma.customer.findUnique({
+                where: { shopifyId: String(customerId) }
+            });
+            if (dbCustomer) dbCustomerId = dbCustomer.id;
+        }
+
+        // productId is Shopify Product ID
+        const media = await prisma.media.findMany({
+            where: {
+                shopifyProductId: String(productId),
+                approved: true
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                customer: {
+                    select: { firstName: true, lastName: true }
+                },
+                likes: true // Include likes to calculate count and status
+            }
+        });
+
+        // Map response
+        const mappedMedia = media.map(m => {
+            const likedByUser = dbCustomerId ? m.likes.some(l => l.customerId === dbCustomerId) : false;
+            return {
+                ...m,
+                likes: undefined, // Remove raw likes array
+                likeCount: m.likes.length,
+                likedByUser
+            };
+        });
+
+        res.json({ media: mappedMedia });
+    } catch (error) {
+        console.error("Error fetching media:", error);
         res.status(500).json({ error: error.message });
     }
 });

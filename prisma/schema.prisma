@@ -30,6 +30,8 @@ model Customer {
   firstName String?
   lastName  String?
   orders    Order[]
+  media     Media[]
+  likes     Like[]
 }
 
 model PurchasedItem {
@@ -46,4 +48,38 @@ model Product {
   name      String
   date      DateTime @default(now())
   shopifyId String   @unique
+  media     Media[]
+}
+
+model Media {
+  id               String    @id @default(uuid())
+  cloudinaryId     String    @unique
+  url              String
+  type             String // IMAGE, VIDEO
+  customerId       String?
+  customer         Customer? @relation(fields: [customerId], references: [id])
+  productId        String?
+  product          Product?  @relation(fields: [productId], references: [id])
+  shopifyProductId String? // Optional direct reference to Shopify Product ID if Product record missing
+  approved         Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  likes            Like[]
+}
+
+model Like {
+  id         String   @id @default(uuid())
+  customerId String
+  mediaId    String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  media      Media    @relation(fields: [mediaId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, mediaId]) // Prevent duplicate likes
+}
+
+model AdminUser {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String // Hashed password
+  createdAt DateTime @default(now())
 }
