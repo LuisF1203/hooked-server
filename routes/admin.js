@@ -244,7 +244,11 @@ router.get("/", requireAuth, async (req, res) => {
         <body>
             <header>
                 <h1>📸 Community Uploads (${media.length})</h1>
-                <a href="/admin/logout" class="logout-btn">Logout</a>
+                <nav style="display:flex;gap:12px;align-items:center;">
+                    <a href="/admin" style="color:#60a5fa;text-decoration:none;padding:6px 12px;border:1px solid #60a5fa;border-radius:4px;font-size:14px;">Media</a>
+                    <a href="/admin/diy" style="color:#aaa;text-decoration:none;padding:6px 12px;border:1px solid #444;border-radius:4px;font-size:14px;transition:all 0.2s;">🧶 DIY</a>
+                    <a href="/admin/logout" class="logout-btn">Logout</a>
+                </nav>
             </header>
             
             <form class="filters" method="GET" action="/admin">
@@ -349,6 +353,228 @@ router.get("/", requireAuth, async (req, res) => {
         res.send(html);
     } catch (error) {
         console.error("Admin Error:", error);
+        res.status(500).send("Internal Server Error");
+    }
+});
+
+// ══════════════════════════════════════
+// DIY Products Admin Panel
+// ══════════════════════════════════════
+router.get("/diy", requireAuth, async (req, res) => {
+    try {
+        const products = await prisma.diyProduct.findMany({
+            orderBy: { createdAt: "desc" },
+            include: {
+                images: { orderBy: { position: "asc" } },
+            },
+        });
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Hooked Admin — DIY Products</title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 20px; }
+                
+                header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222; padding-bottom: 16px; margin-bottom: 28px; }
+                header h1 { font-size: 1.5rem; }
+                header nav { display: flex; gap: 16px; align-items: center; }
+                header nav a { color: #888; text-decoration: none; font-size: 14px; padding: 6px 12px; border: 1px solid #333; border-radius: 6px; transition: all 0.2s; }
+                header nav a:hover { color: #fff; border-color: #555; background: #1a1a1a; }
+                header nav a.active { color: #d68aff; border-color: #d68aff; }
+
+                .section-title { font-size: 1.2rem; margin-bottom: 16px; color: #fff; border-left: 3px solid #d68aff; padding-left: 12px; }
+
+                /* ── Form ── */
+                .form-card { background: #141414; border: 1px solid #222; border-radius: 12px; padding: 28px; margin-bottom: 36px; }
+                .form-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+                .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 200px; }
+                .form-group label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+                .form-group input, .form-group textarea { padding: 10px 14px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 14px; outline: none; transition: border 0.2s; }
+                .form-group input:focus, .form-group textarea:focus { border-color: #d68aff; }
+                .form-group textarea { min-height: 80px; resize: vertical; }
+                .form-group input[type="file"] { padding: 8px; }
+
+                .btn-submit { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; background: linear-gradient(135deg, #d68aff 0%, #a855f7 100%); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; margin-top: 8px; }
+                .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(168,85,247,0.4); }
+                .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+                /* ── Product Grid ── */
+                .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+                .product-card { background: #141414; border: 1px solid #222; border-radius: 12px; overflow: hidden; transition: border-color 0.2s; }
+                .product-card:hover { border-color: #333; }
+                .product-card__images { display: flex; overflow-x: auto; height: 180px; background: #000; scrollbar-width: thin; }
+                .product-card__images img { height: 100%; width: auto; object-fit: cover; flex-shrink: 0; }
+                .product-card__images::-webkit-scrollbar { height: 4px; }
+                .product-card__images::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+                .product-card__body { padding: 16px; }
+                .product-card__name { font-size: 1.1rem; font-weight: 600; color: #fff; margin-bottom: 6px; }
+                .product-card__desc { font-size: 13px; color: #888; margin-bottom: 10px; max-height: 60px; overflow: hidden; }
+                .product-card__meta { display: flex; gap: 12px; font-size: 12px; color: #666; margin-bottom: 12px; }
+                .product-card__meta span { display: flex; align-items: center; gap: 4px; }
+                .product-card__actions { display: flex; gap: 8px; }
+                .btn-danger { padding: 8px 16px; background: #2a1215; color: #f87171; border: 1px solid #3f1418; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+                .btn-danger:hover { background: #4a1a1e; border-color: #f87171; }
+                .btn-link { padding: 8px 16px; background: #1a1a2e; color: #60a5fa; border: 1px solid #1e3a5f; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; transition: all 0.2s; }
+                .btn-link:hover { background: #1e3a5f; }
+
+                .empty-state { text-align: center; padding: 60px; color: #555; font-size: 1rem; }
+
+                .status-active { color: #4ade80; }
+                .status-inactive { color: #f87171; }
+                .status-upcoming { color: #fbbf24; }
+
+                #upload-progress { display: none; margin-top: 12px; padding: 12px; background: #1a1a2e; border: 1px solid #2d2d5e; border-radius: 8px; color: #a5b4fc; font-size: 14px; }
+            </style>
+        </head>
+        <body>
+            <header>
+                <h1>🧶 DIY Products</h1>
+                <nav>
+                    <a href="/admin">Media</a>
+                    <a href="/admin/diy" class="active">DIY</a>
+                    <a href="/admin/logout">Logout</a>
+                </nav>
+            </header>
+
+            <h2 class="section-title">Crear Producto DIY</h2>
+            <div class="form-card">
+                <form id="create-form" enctype="multipart/form-data">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input type="text" name="name" required placeholder="Ej: Gorro Julieta">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Descripción</label>
+                            <textarea name="description" placeholder="Describe el patrón, materiales, nivel de dificultad..."></textarea>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Fecha Inicio</label>
+                            <input type="date" name="startDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Fecha Fin</label>
+                            <input type="date" name="endDate" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Imágenes (múltiples)</label>
+                            <input type="file" name="images" multiple accept="image/*">
+                        </div>
+                        <div class="form-group">
+                            <label>PDF del Patrón</label>
+                            <input type="file" name="pdf" accept=".pdf">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit" id="submit-btn">
+                        <span>＋</span> Crear Producto
+                    </button>
+                    <div id="upload-progress">Subiendo archivos... por favor espera</div>
+                </form>
+            </div>
+
+            <h2 class="section-title">Productos (${products.length})</h2>
+            ${products.length === 0 ? '<div class="empty-state">No hay productos DIY aún. ¡Crea el primero!</div>' : ''}
+            <div class="products-grid">
+                ${products.map(p => {
+                    const now = new Date();
+                    const start = new Date(p.startDate);
+                    const end = new Date(p.endDate);
+                    let statusClass = 'status-inactive';
+                    let statusText = 'Inactivo';
+                    if (now >= start && now <= end) { statusClass = 'status-active'; statusText = 'Activo'; }
+                    else if (now < start) { statusClass = 'status-upcoming'; statusText = 'Próximo'; }
+
+                    return `
+                    <div class="product-card" id="product-${p.id}">
+                        <div class="product-card__images">
+                            ${p.images.length > 0
+                                ? p.images.map(img => `<img src="${img.url}" loading="lazy" />`).join('')
+                                : '<div style="width:100%;display:flex;align-items:center;justify-content:center;color:#444">Sin imágenes</div>'
+                            }
+                        </div>
+                        <div class="product-card__body">
+                            <div class="product-card__name">${p.name}</div>
+                            <div class="product-card__desc">${p.description || 'Sin descripción'}</div>
+                            <div class="product-card__meta">
+                                <span class="${statusClass}">● ${statusText}</span>
+                                <span>📅 ${start.toLocaleDateString('es-MX')} — ${end.toLocaleDateString('es-MX')}</span>
+                            </div>
+                            <div class="product-card__actions">
+                                ${p.pdfUrl ? `<a href="${p.pdfUrl}" target="_blank" class="btn-link">📄 Ver PDF</a>` : ''}
+                                <button class="btn-danger" onclick="deleteProduct('${p.id}')">🗑 Eliminar</button>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+
+            <script>
+                // Create Product
+                document.getElementById('create-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('submit-btn');
+                    const progress = document.getElementById('upload-progress');
+                    btn.disabled = true;
+                    progress.style.display = 'block';
+
+                    try {
+                        const formData = new FormData(e.target);
+                        const res = await fetch('/diy/products', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        alert('Network error: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        progress.style.display = 'none';
+                    }
+                });
+
+                // Delete Product
+                async function deleteProduct(id) {
+                    if (!confirm('¿Estás seguro? Esto eliminará el producto y todas sus imágenes.')) return;
+
+                    try {
+                        const res = await fetch('/diy/products/' + id, { method: 'DELETE' });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            document.getElementById('product-' + id).remove();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Network error');
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        `;
+
+        res.send(html);
+    } catch (error) {
+        console.error("Admin DIY Error:", error);
         res.status(500).send("Internal Server Error");
     }
 });

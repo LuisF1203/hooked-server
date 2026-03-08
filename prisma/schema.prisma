@@ -5,11 +5,13 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Order {
@@ -82,4 +84,25 @@ model AdminUser {
   email     String   @unique
   password  String // Hashed password
   createdAt DateTime @default(now())
+}
+
+model DiyProduct {
+  id          String     @id @default(uuid())
+  name        String
+  description String
+  pdfUrl      String
+  startDate   DateTime
+  endDate     DateTime
+  images      DiyImage[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model DiyImage {
+  id           String     @id @default(uuid())
+  url          String
+  cloudinaryId String
+  position     Int        @default(0)
+  productId    String
+  product      DiyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
 }

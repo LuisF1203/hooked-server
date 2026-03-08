@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import shopifyRoutes from "./routes/shopify.js";
 import adminRoutes from "./routes/admin.js";
+import diyRoutes from "./routes/diy.js";
 import cookieParser from "cookie-parser";
 
 const app = express();
@@ -24,6 +25,8 @@ app.options(/.*/, cors());
 app.use("/shopify", shopifyRoutes);
 // Admin Dashboard
 app.use("/admin", adminRoutes);
+// DIY Products API
+app.use("/diy", diyRoutes);
 
 app.listen(3000, () => {
     console.log("Server started on port 3000");
