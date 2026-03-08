@@ -1,0 +1,100 @@
+[
+  {
+    "id": "f413555c-162e-48d1-a689-d1bc2754ec7b",
+    "name": "gorro 3",
+    "description": "aaaa",
+    "pdfUrl": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995937/hooked_diy/pdfs/b1ywhxm8se3mdrutyr7e.pdf",
+    "startDate": "2026-03-08T00:00:00.000Z",
+    "endDate": "2026-04-08T00:00:00.000Z",
+    "createdAt": "2026-03-08T18:52:19.395Z",
+    "updatedAt": "2026-03-08T18:52:19.395Z",
+    "images": [
+      {
+        "id": "06e4062e-7310-4642-abd0-8c2ef01c0fe3",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995938/hooked_diy/images/csdlbktxgvcxmkqnks29.jpg",
+        "cloudinaryId": "hooked_diy/images/csdlbktxgvcxmkqnks29",
+        "position": 0,
+        "productId": "f413555c-162e-48d1-a689-d1bc2754ec7b"
+      },
+      {
+        "id": "d16d677f-1619-4b71-9453-199e5a261cee",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995938/hooked_diy/images/rwefil57wal6lygsbvcw.jpg",
+        "cloudinaryId": "hooked_diy/images/rwefil57wal6lygsbvcw",
+        "position": 1,
+        "productId": "f413555c-162e-48d1-a689-d1bc2754ec7b"
+      }
+    ],
+    "materials": [
+      {
+        "id": "c6e4a2cb-8c90-493e-9e13-bb196423311e",
+        "name": "Hilo de algodón",
+        "description": "Hilo 100% algodón color de tu preferencia",
+        "quantity": "10m / 2mm",
+        "imageUrl": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772999851/hooked_diy/materials/w42blwgpinzqavxqj8lw.avif",
+        "cloudinaryId": "hooked_diy/materials/w42blwgpinzqavxqj8lw",
+        "productId": "f413555c-162e-48d1-a689-d1bc2754ec7b"
+      }
+    ]
+  },
+  {
+    "id": "a2c6dcff-9ee2-4630-b342-4c4526cac66c",
+    "name": "gorro 2",
+    "description": "nuevo gorro 2",
+    "pdfUrl": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995728/hooked_diy/pdfs/pd8djspgfc7us9ysufpu.pdf",
+    "startDate": "2026-03-08T00:00:00.000Z",
+    "endDate": "2026-04-08T00:00:00.000Z",
+    "createdAt": "2026-03-08T18:48:51.718Z",
+    "updatedAt": "2026-03-08T18:48:51.718Z",
+    "images": [
+      {
+        "id": "9a63e763-7fb0-4518-b364-4edfc136c3af",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995729/hooked_diy/images/q0feugkqxmvwgf6vqrll.png",
+        "cloudinaryId": "hooked_diy/images/q0feugkqxmvwgf6vqrll",
+        "position": 0,
+        "productId": "a2c6dcff-9ee2-4630-b342-4c4526cac66c"
+      },
+      {
+        "id": "72751c59-527f-414b-a716-2969cc2695f5",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995729/hooked_diy/images/uztmwcjcus22pwbzeewq.png",
+        "cloudinaryId": "hooked_diy/images/uztmwcjcus22pwbzeewq",
+        "position": 1,
+        "productId": "a2c6dcff-9ee2-4630-b342-4c4526cac66c"
+      },
+      {
+        "id": "f59914ee-efa0-4339-809b-2a1cd16c4542",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995730/hooked_diy/images/icsgdyk5rm2xwicywq8a.png",
+        "cloudinaryId": "hooked_diy/images/icsgdyk5rm2xwicywq8a",
+        "position": 2,
+        "productId": "a2c6dcff-9ee2-4630-b342-4c4526cac66c"
+      },
+      {
+        "id": "e1acfc1c-adf0-42d4-a09e-38e1733f5cd9",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772995731/hooked_diy/images/hp0trgmhilsj8nor4hcd.png",
+        "cloudinaryId": "hooked_diy/images/hp0trgmhilsj8nor4hcd",
+        "position": 3,
+        "productId": "a2c6dcff-9ee2-4630-b342-4c4526cac66c"
+      }
+    ],
+    "materials": []
+  },
+  {
+    "id": "783a5bd7-8056-413f-8c3c-5e75ecfa50db",
+    "name": "gorro 1",
+    "description": "primer gorro",
+    "pdfUrl": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772992396/hooked_diy/pdfs/apbuzklwiyfeldtjc0el.pdf",
+    "startDate": "2026-03-08T00:00:00.000Z",
+    "endDate": "2026-04-08T00:00:00.000Z",
+    "createdAt": "2026-03-08T17:53:20.286Z",
+    "updatedAt": "2026-03-08T17:53:20.286Z",
+    "images": [
+      {
+        "id": "aae60f6f-e30e-4f02-8e8a-39850f007c0e",
+        "url": "https://res.cloudinary.com/dxe2xvrbo/image/upload/v1772992400/hooked_diy/images/pfbslb8f23v6hphferab.webp",
+        "cloudinaryId": "hooked_diy/images/pfbslb8f23v6hphferab",
+        "position": 1,
+        "productId": "783a5bd7-8056-413f-8c3c-5e75ecfa50db"
+      }
+    ],
+    "materials": []
+  }
+]

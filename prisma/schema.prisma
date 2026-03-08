@@ -95,6 +95,7 @@ model DiyProduct {
   endDate     DateTime
   images      DiyImage[]
   materials   DiyMaterial[]
+  steps       DiyStep[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
@@ -113,6 +114,16 @@ model DiyMaterial {
   name         String
   description  String
   quantity     String
+  imageUrl     String? // URL from Cloudinary
+  cloudinaryId String?
+  productId    String
+  product      DiyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model DiyStep {
+  id           String     @id @default(uuid())
+  number       Int
+  instruction  String
   imageUrl     String? // URL from Cloudinary
   cloudinaryId String?
   productId    String

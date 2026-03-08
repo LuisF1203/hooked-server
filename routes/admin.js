@@ -737,6 +737,43 @@ router.get("/diy/edit/:id", requireAuth, async (req, res) => {
                 <button class="btn-submit" style="margin-top:12px" id="upload-pdf-btn" onclick="uploadNewPdf()">📄 Subir PDF</button>
             </div>
 
+            <!-- ── Steps (Tutorial) Section ── -->
+            <h2 class="section-title">Tutorial Paso a Paso (${product.steps ? product.steps.length : 0})</h2>
+            <div class="form-card">
+                <div id="steps-list">
+                    ${product.steps && product.steps.length > 0 ? product.steps.map(step => `
+                        <div class="step-card" id="step-${step.id}" data-id="${step.id}" style="margin-bottom:12px; padding:12px; border:1px solid #333; border-radius:8px; display:flex; gap:16px;">
+                            <div class="step-drag-handle" style="cursor:grab; font-size:24px; color:#555; display:flex; align-items:center;">↕</div>
+                            ${step.imageUrl ? `<img src="${step.imageUrl}" loading="lazy" style="width:80px; height:80px; object-fit:cover; border-radius:6px;"/>` : '<div style="width:80px;height:80px;background:#222;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;">Sin foto</div>'}
+                            <div class="step-info" style="flex:1;">
+                                <div class="step-number" style="font-weight:bold; color:#d68aff; margin-bottom:4px;">Paso ${step.number}</div>
+                                <div class="step-desc" style="color:#ccc; font-size:0.95rem; line-height:1.4;">${step.instruction}</div>
+                            </div>
+                            <button class="delete-btn btn-danger" onclick="deleteStep('${step.id}')" style="padding: 6px 10px; align-self: center;">✕ Eliminar</button>
+                        </div>
+                    `).join('') : '<p style="color:#666; margin-bottom:16px;">No hay pasos registrados.</p>'}
+                </div>
+
+                ${product.steps && product.steps.length > 1 ? `
+                    <button class="btn-submit" id="save-order-btn" onclick="saveStepsOrder()" style="margin-top:12px; background:#4ade80; color:#000; border:none;">Guardar Orden</button>
+                ` : ''}
+
+                <div style="margin-top:24px; padding-top:20px; border-top:1px solid #333;">
+                    <h3 style="font-size:1rem; margin-bottom:16px; color:#ccc;">+ Agregar Paso</h3>
+                    <form id="add-step-form" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label>Instrucciones</label>
+                            <textarea name="instruction" required placeholder="Ej: Haz 5 varetas y cierra con un punto deslizado." style="min-height:80px;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Foto Ilustrativa (Opcional)</label>
+                            <input type="file" name="image" accept="image/*" style="padding:8px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff;">
+                        </div>
+                        <button type="submit" class="btn-submit" id="add-step-btn">Agregar Paso</button>
+                    </form>
+                </div>
+            </div>
+
             <!-- ── Materials Section ── -->
             <h2 class="section-title">Materiales Necesarios (${product.materials.length})</h2>
             <div class="form-card">
@@ -980,6 +1017,138 @@ router.get("/diy/edit/:id", requireAuth, async (req, res) => {
                         card.style.opacity = '1';
                         card.style.pointerEvents = 'auto';
                         alert('Error de red');
+                    }
+                }
+
+                // ── Add Step ──
+                document.getElementById('add-step-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('add-step-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Agregando...';
+
+                    try {
+                        const formData = new FormData(e.target);
+                        const res = await fetch('/diy/products/' + productId + '/steps', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        const data = await res.json();
+
+                        if (data.id) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = 'Agregar Paso';
+                    }
+                });
+
+                // ── Delete Step ──
+                async function deleteStep(stepId) {
+                    if (!confirm('¿Eliminar este paso?')) return;
+                    
+                    const card = document.getElementById('step-' + stepId);
+                    card.style.opacity = '0.5';
+                    card.style.pointerEvents = 'none';
+
+                    try {
+                        const res = await fetch('/diy/steps/' + stepId, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (data.message) {
+                            card.remove();
+                        } else {
+                            card.style.opacity = '1';
+                            card.style.pointerEvents = 'auto';
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        card.style.opacity = '1';
+                        card.style.pointerEvents = 'auto';
+                        alert('Error de red');
+                    }
+                }
+
+                // ── Sortable Steps ──
+                // Simple drag and drop logic for steps
+                const stepsList = document.getElementById('steps-list');
+                let draggedItem = null;
+
+                if (stepsList) {
+                    const stepCards = stepsList.querySelectorAll('.step-card');
+                    stepCards.forEach(card => {
+                        card.setAttribute('draggable', true);
+                        
+                        card.addEventListener('dragstart', function(e) {
+                            draggedItem = card;
+                            setTimeout(() => { card.style.opacity = '0.4'; }, 0);
+                        });
+                        
+                        card.addEventListener('dragend', function() {
+                            setTimeout(() => { 
+                                draggedItem.style.opacity = '1';
+                                draggedItem = null;
+                            }, 0);
+                        });
+                        
+                        card.addEventListener('dragover', function(e) {
+                            e.preventDefault(); // Necessary to allow dropping
+                        });
+                        
+                        card.addEventListener('dragenter', function(e) {
+                            e.preventDefault();
+                        });
+                        
+                        card.addEventListener('drop', function(e) {
+                            if (card !== draggedItem) {
+                                let allItems = [...stepsList.querySelectorAll('.step-card')];
+                                let draggedIndex = allItems.indexOf(draggedItem);
+                                let droppedIndex = allItems.indexOf(card);
+                                
+                                if (draggedIndex < droppedIndex) {
+                                    card.parentNode.insertBefore(draggedItem, card.nextSibling);
+                                } else {
+                                    card.parentNode.insertBefore(draggedItem, card);
+                                }
+                            }
+                        });
+                    });
+                }
+
+                // ── Save Steps Order ──
+                async function saveStepsOrder() {
+                    const btn = document.getElementById('save-order-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Guardando...';
+
+                    try {
+                        const stepCards = document.querySelectorAll('.step-card');
+                        const order = Array.from(stepCards).map((card, index) => ({
+                            id: card.dataset.id,
+                            number: index + 1
+                        }));
+
+                        const res = await fetch('/diy/products/' + productId + '/steps/reorder', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ order })
+                        });
+                        const data = await res.json();
+
+                        if (data.message) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = 'Guardar Orden';
                     }
                 }
             </script>

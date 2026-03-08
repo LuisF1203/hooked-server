@@ -44,6 +44,9 @@ router.get("/products", async (req, res) => {
                     orderBy: { position: "asc" },
                 },
                 materials: true,
+                steps: {
+                    orderBy: { number: "asc" },
+                },
             },
         });
         res.json(products);
@@ -70,6 +73,9 @@ router.get("/products/all", requireAdmin, async (req, res) => {
                     orderBy: { position: "asc" },
                 },
                 materials: true,
+                steps: {
+                    orderBy: { number: "asc" },
+                },
             },
         });
         res.json(products);
@@ -422,6 +428,118 @@ router.delete("/materials/:id", requireAdmin, async (req, res) => {
     } catch (error) {
         console.error("Error deleting material:", error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ══════════════════════════════════════
+// DIY STEPS MANAGEMENT
+// ══════════════════════════════════════
+
+/**
+ * POST /diy/products/:id/steps
+ * Add a new step to a DIY product
+ */
+router.post(
+    "/products/:id/steps",
+    requireAdmin,
+    upload.single("image"),
+    async (req, res) => {
+        const { id } = req.params;
+        const { instruction } = req.body;
+
+        try {
+            // Find current highest step number
+            const lastStep = await prisma.diyStep.findFirst({
+                where: { productId: id },
+                orderBy: { number: "desc" },
+            });
+            const nextNumber = lastStep ? lastStep.number + 1 : 1;
+
+            let imageUrl = null;
+            let cloudinaryId = null;
+
+            if (req.file) {
+                const uploadResult = await uploadStream(
+                    req.file.buffer,
+                    "image" // explicitly pass 'image' as resource type
+                );
+                imageUrl = uploadResult.secure_url;
+                cloudinaryId = uploadResult.public_id;
+            }
+
+            const step = await prisma.diyStep.create({
+                data: {
+                    productId: id,
+                    instruction: instruction,
+                    number: nextNumber,
+                    imageUrl,
+                    cloudinaryId,
+                },
+            });
+            res.json(step);
+        } catch (error) {
+            console.error("Error creating step:", error);
+            res.status(500).json({ error: "Failed to create step" });
+        }
+    }
+);
+
+/**
+ * PUT /diy/products/:id/steps/reorder
+ * Reorder steps by submitting an array of { id, number }
+ */
+router.put("/products/:id/steps/reorder", requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { order } = req.body;
+
+    if (!Array.isArray(order)) {
+        return res.status(400).json({ error: "Invalid order payload" });
+    }
+
+    try {
+        await prisma.$transaction(
+            order.map((item) =>
+                prisma.diyStep.update({
+                    where: { id: item.id },
+                    data: { number: item.number },
+                })
+            )
+        );
+        res.json({ message: "Steps reordered successfully" });
+    } catch (error) {
+        console.error("Error reordering steps:", error);
+        res.status(500).json({ error: "Failed to reorder steps" });
+    }
+});
+
+/**
+ * DELETE /diy/steps/:id
+ * Remove a single step from a product
+ */
+router.delete("/steps/:id", requireAdmin, async (req, res) => {
+    try {
+        const step = await prisma.diyStep.findUnique({
+            where: { id: req.params.id },
+        });
+
+        if (!step) {
+            return res.status(404).json({ error: "Step not found" });
+        }
+
+        if (step.cloudinaryId) {
+            await cloudinary.api.delete_resources([step.cloudinaryId], {
+                type: "upload",
+                resource_type: "image",
+            });
+        }
+
+        await prisma.diyStep.delete({
+            where: { id: req.params.id },
+        });
+        res.json({ message: "Step deleted" });
+    } catch (error) {
+        console.error("Error deleting step:", error);
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
