@@ -87,15 +87,16 @@ model AdminUser {
 }
 
 model DiyProduct {
-  id          String     @id @default(uuid())
+  id          String        @id @default(uuid())
   name        String
   description String
   pdfUrl      String
   startDate   DateTime
   endDate     DateTime
   images      DiyImage[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  materials   DiyMaterial[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
 model DiyImage {
@@ -103,6 +104,17 @@ model DiyImage {
   url          String
   cloudinaryId String
   position     Int        @default(0)
+  productId    String
+  product      DiyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model DiyMaterial {
+  id           String     @id @default(uuid())
+  name         String
+  description  String
+  quantity     String
+  imageUrl     String? // URL from Cloudinary
+  cloudinaryId String?
   productId    String
   product      DiyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
 }

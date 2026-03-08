@@ -511,6 +511,7 @@ router.get("/diy", requireAuth, async (req, res) => {
                                 <span>📅 ${start.toLocaleDateString('es-MX')} — ${end.toLocaleDateString('es-MX')}</span>
                             </div>
                             <div class="product-card__actions">
+                                <a href="/admin/diy/edit/${p.id}" class="btn-link">✏️ Editar</a>
                                 ${p.pdfUrl ? `<a href="${p.pdfUrl}" target="_blank" class="btn-link">📄 Ver PDF</a>` : ''}
                                 <button class="btn-danger" onclick="deleteProduct('${p.id}')">🗑 Eliminar</button>
                             </div>
@@ -575,6 +576,420 @@ router.get("/diy", requireAuth, async (req, res) => {
         res.send(html);
     } catch (error) {
         console.error("Admin DIY Error:", error);
+        res.status(500).send("Internal Server Error");
+    }
+});
+
+// ══════════════════════════════════════
+// DIY Edit Page
+// ══════════════════════════════════════
+router.get("/diy/edit/:id", requireAuth, async (req, res) => {
+    try {
+        const product = await prisma.diyProduct.findUnique({
+            where: { id: req.params.id },
+            include: { 
+                images: { orderBy: { position: "asc" } },
+                materials: true 
+            },
+        });
+
+        if (!product) {
+            return res.status(404).send("Product not found");
+        }
+
+        const fmtDate = (d) => new Date(d).toISOString().split('T')[0];
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Editar — ${product.name}</title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 20px; }
+
+                header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222; padding-bottom: 16px; margin-bottom: 28px; }
+                header h1 { font-size: 1.4rem; }
+                header nav { display: flex; gap: 12px; align-items: center; }
+                header nav a { color: #888; text-decoration: none; font-size: 14px; padding: 6px 12px; border: 1px solid #333; border-radius: 6px; transition: all 0.2s; }
+                header nav a:hover { color: #fff; border-color: #555; background: #1a1a1a; }
+
+                .section-title { font-size: 1.1rem; margin-bottom: 16px; color: #fff; border-left: 3px solid #d68aff; padding-left: 12px; }
+
+                .form-card { background: #141414; border: 1px solid #222; border-radius: 12px; padding: 28px; margin-bottom: 28px; }
+                .form-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+                .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 200px; }
+                .form-group label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+                .form-group input, .form-group textarea { padding: 10px 14px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 14px; outline: none; transition: border 0.2s; }
+                .form-group input:focus, .form-group textarea:focus { border-color: #d68aff; }
+                .form-group textarea { min-height: 80px; resize: vertical; }
+
+                .btn-submit { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; background: linear-gradient(135deg, #d68aff 0%, #a855f7 100%); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+                .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(168,85,247,0.4); }
+                .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+                /* Image Grid */
+                .images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+                .img-card { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #333; background: #000; aspect-ratio: 1; }
+                .img-card img { width: 100%; height: 100%; object-fit: cover; }
+                .img-card .delete-btn { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(220,38,38,0.85); color: #fff; border: none; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.15s, background 0.15s; backdrop-filter: blur(4px); }
+                .img-card .delete-btn:hover { background: #dc2626; transform: scale(1.15); }
+                .img-card.deleting { opacity: 0.3; pointer-events: none; }
+
+                /* PDF Section */
+                .pdf-section { display: flex; align-items: center; gap: 12px; padding: 14px; background: #1a1a2e; border: 1px solid #2d2d5e; border-radius: 8px; margin-bottom: 16px; }
+                .pdf-section a { color: #60a5fa; text-decoration: none; }
+                .pdf-section a:hover { text-decoration: underline; }
+                .btn-remove-pdf { padding: 6px 14px; background: #2a1215; color: #f87171; border: 1px solid #3f1418; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+                .btn-remove-pdf:hover { background: #4a1a1e; border-color: #f87171; }
+
+                #progress-msg { display: none; margin-top: 12px; padding: 12px; background: #1a1a2e; border: 1px solid #2d2d5e; border-radius: 8px; color: #a5b4fc; font-size: 14px; }
+
+                .empty-images { text-align: center; padding: 40px; color: #555; border: 2px dashed #333; border-radius: 10px; margin-bottom: 20px; }
+
+                /* Materials Section */
+                .material-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start; }
+                .material-card img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; background: #000; }
+                .material-info { flex: 1; }
+                .material-name { font-weight: 600; color: #fff; margin-bottom: 4px; font-size: 15px; }
+                .material-qty { font-size: 13px; color: #d68aff; margin-bottom: 4px; font-family: monospace; }
+                .material-desc { font-size: 13px; color: #888; }
+            </style>
+        </head>
+        <body>
+            <header>
+                <h1>✏️ Editar: ${product.name}</h1>
+                <nav>
+                    <a href="/admin/diy">← Volver a DIY</a>
+                    <a href="/admin">Media</a>
+                    <a href="/admin/logout">Logout</a>
+                </nav>
+            </header>
+
+            <!-- ── Product Details Form ── -->
+            <h2 class="section-title">Datos del Producto</h2>
+            <div class="form-card">
+                <form id="edit-form" enctype="multipart/form-data">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input type="text" name="name" value="${product.name}" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Descripción</label>
+                            <textarea name="description">${product.description || ''}</textarea>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Fecha Inicio</label>
+                            <input type="date" name="startDate" value="${fmtDate(product.startDate)}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Fecha Fin</label>
+                            <input type="date" name="endDate" value="${fmtDate(product.endDate)}" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit" id="save-btn">💾 Guardar Cambios</button>
+                    <div id="progress-msg">Guardando cambios...</div>
+                </form>
+            </div>
+
+            <!-- ── Images Section ── -->
+            <h2 class="section-title">Imágenes (${product.images.length})</h2>
+            <div class="form-card">
+                ${product.images.length > 0 ? `
+                    <div class="images-grid" id="images-grid">
+                        ${product.images.map(img => `
+                            <div class="img-card" id="img-${img.id}">
+                                <img src="${img.url}" loading="lazy" />
+                                <button class="delete-btn" onclick="deleteImage('${img.id}')" title="Eliminar imagen">✕</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<div class="empty-images">No hay imágenes aún</div>'}
+
+                <div class="form-group" style="margin-top:12px">
+                    <label>Agregar Nuevas Imágenes</label>
+                    <input type="file" id="new-images" multiple accept="image/*" style="padding:8px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff;">
+                </div>
+                <button class="btn-submit" style="margin-top:12px" id="upload-images-btn" onclick="uploadNewImages()">📷 Subir Imágenes</button>
+            </div>
+
+            <!-- ── PDF Section ── -->
+            <h2 class="section-title">PDF del Patrón</h2>
+            <div class="form-card">
+                ${product.pdfUrl ? `
+                    <div class="pdf-section" id="pdf-section">
+                        <span>📄</span>
+                        <a href="${product.pdfUrl}" target="_blank">Ver PDF actual</a>
+                        <button class="btn-remove-pdf" onclick="removePdf()">Quitar PDF</button>
+                    </div>
+                ` : '<p style="color:#666; margin-bottom:16px;">No hay PDF asignado</p>'}
+                <div class="form-group">
+                    <label>${product.pdfUrl ? 'Reemplazar PDF' : 'Subir PDF'}</label>
+                    <input type="file" id="new-pdf" accept=".pdf" style="padding:8px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff;">
+                </div>
+                <button class="btn-submit" style="margin-top:12px" id="upload-pdf-btn" onclick="uploadNewPdf()">📄 Subir PDF</button>
+            </div>
+
+            <!-- ── Materials Section ── -->
+            <h2 class="section-title">Materiales Necesarios (${product.materials.length})</h2>
+            <div class="form-card">
+                <div id="materials-list">
+                    ${product.materials.length > 0 ? product.materials.map(mat => `
+                        <div class="material-card" id="mat-${mat.id}">
+                            ${mat.imageUrl ? `<img src="${mat.imageUrl}" loading="lazy"/>` : '<div style="width:60px;height:60px;background:#222;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;">Sin foto</div>'}
+                            <div class="material-info">
+                                <div class="material-name">${mat.name}</div>
+                                <div class="material-qty">Cant / Grosor: ${mat.quantity}</div>
+                                <div class="material-desc">${mat.description || 'Sin descripción'}</div>
+                            </div>
+                            <button class="delete-btn btn-danger" onclick="deleteMaterial('${mat.id}')" style="padding: 6px 10px; align-self: center;">✕ Eliminar</button>
+                        </div>
+                    `).join('') : '<p style="color:#666; margin-bottom:16px;">No hay materiales registrados.</p>'}
+                </div>
+
+                <div style="margin-top:24px; padding-top:20px; border-top:1px solid #333;">
+                    <h3 style="font-size:1rem; margin-bottom:16px; color:#ccc;">+ Agregar Material</h3>
+                    <form id="add-material-form" enctype="multipart/form-data">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Nombre del Material</label>
+                                <input type="text" name="name" required placeholder="Ej: Hilo de algodón">
+                            </div>
+                            <div class="form-group">
+                                <label>Cantidad / Grosor</label>
+                                <input type="text" name="quantity" required placeholder="Ej: 2 ovillos, 5mm">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Descripción / Notas</label>
+                                <textarea name="description" placeholder="Opcional. Ej: Color rosa pastel. Asegúrate de que sea 100% algodón." style="min-height:50px;"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Foto del Material (Opcional)</label>
+                                <input type="file" name="image" accept="image/*" style="padding:8px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff;">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-submit" id="add-mat-btn">Agregar Material</button>
+                    </form>
+                </div>
+            </div>
+
+            <script>
+                const productId = '${product.id}';
+
+                // ── Save product details ──
+                document.getElementById('edit-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('save-btn');
+                    const msg = document.getElementById('progress-msg');
+                    btn.disabled = true;
+                    msg.style.display = 'block';
+                    msg.textContent = 'Guardando cambios...';
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('name', e.target.name.value);
+                        formData.append('description', e.target.description.value);
+                        formData.append('startDate', e.target.startDate.value);
+                        formData.append('endDate', e.target.endDate.value);
+
+                        const res = await fetch('/diy/products/' + productId, {
+                            method: 'PUT',
+                            body: formData,
+                        });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            msg.textContent = '✅ Cambios guardados';
+                            msg.style.borderColor = '#22c55e';
+                            msg.style.color = '#4ade80';
+                            setTimeout(() => { msg.style.display = 'none'; }, 2000);
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                    }
+                });
+
+                // ── Delete single image ──
+                async function deleteImage(imgId) {
+                    if (!confirm('¿Eliminar esta imagen?')) return;
+                    const card = document.getElementById('img-' + imgId);
+                    card.classList.add('deleting');
+
+                    try {
+                        const res = await fetch('/diy/images/' + imgId, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (data.success) {
+                            card.remove();
+                        } else {
+                            card.classList.remove('deleting');
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        card.classList.remove('deleting');
+                        alert('Error de red');
+                    }
+                }
+
+                // ── Upload new images ──
+                async function uploadNewImages() {
+                    const input = document.getElementById('new-images');
+                    if (!input.files.length) return alert('Selecciona al menos una imagen');
+
+                    const btn = document.getElementById('upload-images-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Subiendo...';
+
+                    try {
+                        const formData = new FormData();
+                        for (const file of input.files) {
+                            formData.append('images', file);
+                        }
+
+                        const res = await fetch('/diy/products/' + productId, {
+                            method: 'PUT',
+                            body: formData,
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = '📷 Subir Imágenes';
+                    }
+                }
+
+                // ── Upload new PDF ──
+                async function uploadNewPdf() {
+                    const input = document.getElementById('new-pdf');
+                    if (!input.files.length) return alert('Selecciona un archivo PDF');
+
+                    const btn = document.getElementById('upload-pdf-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Subiendo PDF...';
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('pdf', input.files[0]);
+
+                        const res = await fetch('/diy/products/' + productId, {
+                            method: 'PUT',
+                            body: formData,
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = '📄 Subir PDF';
+                    }
+                }
+
+                // ── Remove PDF ──
+                async function removePdf() {
+                    if (!confirm('¿Quitar el PDF de este producto?')) return;
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('removePdf', 'true');
+
+                        const res = await fetch('/diy/products/' + productId, {
+                            method: 'PUT',
+                            body: formData,
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red');
+                    }
+                }
+
+                // ── Add Material ──
+                document.getElementById('add-material-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('add-mat-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Agregando...';
+
+                    try {
+                        const formData = new FormData(e.target);
+                        const res = await fetch('/diy/products/' + productId + '/materials', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        alert('Error de red: ' + err.message);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = 'Agregar Material';
+                    }
+                });
+
+                // ── Delete Material ──
+                async function deleteMaterial(matId) {
+                    if (!confirm('¿Eliminar este material?')) return;
+                    
+                    const card = document.getElementById('mat-' + matId);
+                    card.style.opacity = '0.5';
+                    card.style.pointerEvents = 'none';
+
+                    try {
+                        const res = await fetch('/diy/materials/' + matId, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (data.success) {
+                            card.remove();
+                        } else {
+                            card.style.opacity = '1';
+                            card.style.pointerEvents = 'auto';
+                            alert('Error: ' + (data.error || 'Unknown'));
+                        }
+                    } catch (err) {
+                        card.style.opacity = '1';
+                        card.style.pointerEvents = 'auto';
+                        alert('Error de red');
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        `;
+
+        res.send(html);
+    } catch (error) {
+        console.error("Admin DIY Edit Error:", error);
         res.status(500).send("Internal Server Error");
     }
 });

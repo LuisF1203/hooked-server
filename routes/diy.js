@@ -43,6 +43,7 @@ router.get("/products", async (req, res) => {
                 images: {
                     orderBy: { position: "asc" },
                 },
+                materials: true,
             },
         });
         res.json(products);
@@ -68,6 +69,7 @@ router.get("/products/all", requireAdmin, async (req, res) => {
                 images: {
                     orderBy: { position: "asc" },
                 },
+                materials: true,
             },
         });
         res.json(products);
@@ -200,6 +202,225 @@ router.delete("/products/:id", requireAdmin, async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         console.error("Error deleting DIY product:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+/**
+ * PUT /diy/products/:id
+ * Update a DIY product: fields, add new images, replace PDF
+ * multipart: images (multiple, optional — appended), pdf (single, optional — replaces), name, description, startDate, endDate
+ */
+router.put(
+    "/products/:id",
+    requireAdmin,
+    upload.fields([
+        { name: "images", maxCount: 10 },
+        { name: "pdf", maxCount: 1 },
+    ]),
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, description, startDate, endDate, removePdf } = req.body;
+
+            const existing = await prisma.diyProduct.findUnique({
+                where: { id },
+                include: { images: { orderBy: { position: "asc" } }, materials: true },
+            });
+
+            if (!existing) {
+                return res.status(404).json({ error: "Product not found" });
+            }
+
+            // Build update data
+            const updateData = {};
+            if (name) updateData.name = name;
+            if (description !== undefined) updateData.description = description;
+            if (startDate) updateData.startDate = new Date(startDate);
+            if (endDate) updateData.endDate = new Date(endDate);
+
+            // Handle PDF replacement
+            if (req.files.pdf && req.files.pdf[0]) {
+                // Delete old PDF from Cloudinary
+                if (existing.pdfUrl) {
+                    const oldPdfId = existing.pdfUrl
+                        .split("/upload/")[1]
+                        ?.replace(/^v\d+\//, "")
+                        ?.replace(/\.[^.]+$/, "");
+                    if (oldPdfId) {
+                        await cloudinary.uploader.destroy(oldPdfId, { resource_type: "image" }).catch(() => {});
+                        await cloudinary.uploader.destroy(oldPdfId, { resource_type: "raw" }).catch(() => {});
+                    }
+                }
+                // Upload new PDF
+                const pdfResult = await uploadStream(req.files.pdf[0].buffer, {
+                    folder: "hooked_diy/pdfs",
+                    resource_type: "image",
+                    format: "pdf",
+                });
+                updateData.pdfUrl = pdfResult.secure_url;
+            } else if (removePdf === "true" && existing.pdfUrl) {
+                // Remove PDF without replacing
+                const oldPdfId = existing.pdfUrl
+                    .split("/upload/")[1]
+                    ?.replace(/^v\d+\//, "")
+                    ?.replace(/\.[^.]+$/, "");
+                if (oldPdfId) {
+                    await cloudinary.uploader.destroy(oldPdfId, { resource_type: "image" }).catch(() => {});
+                    await cloudinary.uploader.destroy(oldPdfId, { resource_type: "raw" }).catch(() => {});
+                }
+                updateData.pdfUrl = "";
+            }
+
+            // Upload new images (appended to existing)
+            if (req.files.images && req.files.images.length > 0) {
+                const maxPosition = existing.images.length > 0
+                    ? Math.max(...existing.images.map(img => img.position)) + 1
+                    : 0;
+
+                const newImages = [];
+                for (let i = 0; i < req.files.images.length; i++) {
+                    const result = await uploadStream(req.files.images[i].buffer, {
+                        folder: "hooked_diy/images",
+                        resource_type: "image",
+                    });
+                    newImages.push({
+                        url: result.secure_url,
+                        cloudinaryId: result.public_id,
+                        position: maxPosition + i,
+                        productId: id,
+                    });
+                }
+
+                await prisma.diyImage.createMany({ data: newImages });
+            }
+
+            // Update product fields
+            const product = await prisma.diyProduct.update({
+                where: { id },
+                data: updateData,
+                include: { images: { orderBy: { position: "asc" } }, materials: true },
+            });
+
+            res.json({ success: true, product });
+        } catch (error) {
+            console.error("Error updating DIY product:", error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+);
+
+/**
+ * DELETE /diy/images/:id
+ * Remove a single image from a product
+ */
+router.delete("/images/:id", requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const image = await prisma.diyImage.findUnique({ where: { id } });
+        if (!image) {
+            return res.status(404).json({ error: "Image not found" });
+        }
+
+        // Delete from Cloudinary
+        try {
+            await cloudinary.uploader.destroy(image.cloudinaryId);
+        } catch (e) {
+            console.warn(`Could not delete Cloudinary image ${image.cloudinaryId}:`, e);
+        }
+
+        // Delete from DB
+        await prisma.diyImage.delete({ where: { id } });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Error deleting image:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /diy/products/:id/materials
+ * Add a new material to a product
+ * multipart: image (single, optional), name, description, quantity
+ */
+router.post(
+    "/products/:id/materials",
+    requireAdmin,
+    upload.single("image"),
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, description, quantity } = req.body;
+
+            if (!name || !quantity) {
+                return res.status(400).json({ error: "name and quantity are required." });
+            }
+
+            const product = await prisma.diyProduct.findUnique({ where: { id } });
+            if (!product) {
+                return res.status(404).json({ error: "Product not found" });
+            }
+
+            let imageUrl = null;
+            let cloudinaryId = null;
+
+            if (req.file) {
+                const result = await uploadStream(req.file.buffer, {
+                    folder: "hooked_diy/materials",
+                    resource_type: "image",
+                });
+                imageUrl = result.secure_url;
+                cloudinaryId = result.public_id;
+            }
+
+            const material = await prisma.diyMaterial.create({
+                data: {
+                    name,
+                    description: description || "",
+                    quantity,
+                    imageUrl,
+                    cloudinaryId,
+                    productId: id,
+                },
+            });
+
+            res.json({ success: true, material });
+        } catch (error) {
+            console.error("Error creating material:", error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+);
+
+/**
+ * DELETE /diy/materials/:id
+ * Remove a material from a product
+ */
+router.delete("/materials/:id", requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const material = await prisma.diyMaterial.findUnique({ where: { id } });
+        if (!material) {
+            return res.status(404).json({ error: "Material not found" });
+        }
+
+        // Delete from Cloudinary
+        if (material.cloudinaryId) {
+            try {
+                await cloudinary.uploader.destroy(material.cloudinaryId);
+            } catch (e) {
+                console.warn(`Could not delete Cloudinary image ${material.cloudinaryId}:`, e);
+            }
+        }
+
+        // Delete from DB
+        await prisma.diyMaterial.delete({ where: { id } });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Error deleting material:", error);
         res.status(500).json({ error: error.message });
     }
 });
